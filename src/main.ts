@@ -1,36 +1,35 @@
 import { App, Editor, MarkdownView, parseFrontMatterEntry, Notice, Plugin, Menu, FuzzyMatch, FuzzySuggestModal, renderResults } from 'obsidian';
 interface Category {
         title: string;
-    }
-const ALL_CATEGORIES = getCategories.call(this).map((cat) => ({ title: cat } as category));
+        isNew?: boolean;
+        id?: string;
+}
 
 export class CategoryModal extends FuzzySuggestModal<category> {
     private currentInput: string = ''
     
-    getCategories() {
+    private getCategories(): string[] {
         const files = this.app.vault.getMarkdownFiles();  
         const categories = new Set<string>();  
           
-        for (const file of files) {  
-            const cache = this.app.metadataCache.getFileCache(file);  
-            if (cache?.frontmatter) {  
-                const categoryValue = parseFrontMatterEntry(cache.frontmatter, 'category');  
-                if (categoryValue) {  
-                    const categoryValues = Array.isArray(categoryValue)   
-                        ? categoryValue   
-                        : [categoryValue];  
-                      
-                    for (const category of categoryValues) {  
-                        if (typeof category === 'string') {  
-                            categories.add(category);  
-                        }  
-                    }  
-               }  
-            }  
-        }  
-        return Array.from(categories).sort();
+        for (const file of files) {
+          const cache = this.app.metadataCache.getFileCache(file);
+          if (cache?.frontmatter) {
+            const categoryValue = parseFrontMatterEntry(cache.frontmatter, 'category');
+            const values = Array.isArray(categoryValue) ? categoryValue : [categoryValue];
+            for (const c of values) {
+              if (typeof c === 'string') categories.add(c);
+            }
+          }
+        }
+    return Array.from(categories).sort();
     };
     
+    getItems(): Category[] {
+    // compute fresh each time from vault
+    return this.getCategories().map((title) => ({ title }));
+  }
+
     getSuggestions(query: string): FuzzyMatch<Category>[] {
         this.currentInput = query.trim();
 
@@ -70,15 +69,6 @@ export class CategoryModal extends FuzzySuggestModal<category> {
             item: cat,   
             match: { score: 0.8, matches: [] }  
         }));  
-    }  
-
-    // Returns all available suggestions.
-    getItemText(item: Category): string {  
-       return item.title;  
-    }  
-  
-    getItems(): Category[] {  
-       return ALL_CATEGORIES;  
     }  
   
     renderSuggestion(match: FuzzyMatch<Category>, el: HTMLElement) {  
