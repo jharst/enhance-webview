@@ -1,35 +1,77 @@
-import { App, Editor, MarkdownView, Notice, Plugin, Menu, FuzzyMatch, FuzzySuggestModal, renderResults } from 'obsidian';
-
+import { App, Editor, MarkdownView, parseFrontMatterEntry, Notice, Plugin, Menu, FuzzyMatch, FuzzySuggestModal, renderResults } from 'obsidian';
 interface Category {
-    title: string;
-}
-
+        title: string;
+    }
 const ALL_CATEGORIES = getCategories.call(this).map((cat) => ({ title: cat } as category));
 
-function getCategories() {
-    const files = this.app.vault.getMarkdownFiles();  
-    const categories = new Set<string>();  
-      
-    for (const file of files) {  
-        const cache = this.app.metadataCache.getFileCache(file);  
-        if (cache?.frontmatter?.category) {  
-            // Handle both single string values and arrays  
-            const categoryValues = Array.isArray(cache.frontmatter.category)   
-                ? cache.frontmatter.category   
-                : [cache.frontmatter.category];  
-              
-            for (const category of categoryValues) {  
-                if (typeof category === 'string') {  
-                    categories.add(category);  
-                }  
+export class CategoryModal extends FuzzySuggestModal<category> {
+    private currentInput: string = ''
+    
+    getCategories() {
+        const files = this.app.vault.getMarkdownFiles();  
+        const categories = new Set<string>();  
+          
+        for (const file of files) {  
+            const cache = this.app.metadataCache.getFileCache(file);  
+            if (cache?.frontmatter) {  
+                const categoryValue = parseFrontMatterEntry(cache.frontmatter, 'category');  
+                if (categoryValue) {  
+                    const categoryValues = Array.isArray(categoryValue)   
+                        ? categoryValue   
+                        : [categoryValue];  
+                      
+                    for (const category of categoryValues) {  
+                        if (typeof category === 'string') {  
+                            categories.add(category);  
+                        }  
+                    }  
+               }  
             }  
         }  
-    }  
-    return Array.from(categories).sort();
-}
+        return Array.from(categories).sort();
+    };
+    
+    getSuggestions(query: string): FuzzyMatch<Category>[] {
+        this.currentInput = query.trim();
 
-// Remember to rename these classes and interfaces!
-export class ExampleModal extends FuzzySuggestModal<category> {
+        if(!this.currentInput) {
+            return [];
+        }
+
+        //Get existing categories
+        const existingCategories = this.getCategories();
+        const matches = existingCategories.filter(category =>
+            category.title.toLowerCase().includes(this.currentInput.toLowerCase())
+        );
+
+        //If no matches, add the current input as a new category
+        if (matches.length === 0 && this.currentInput.length > 0) {  
+            const newCategory: Category = { title: this.currentInput, isNew: true };  
+            return [{ item: newCategory, match: { score: 1, matches: [] } }];  
+        }  
+
+        // If partial matches, add "Create new" as first option  
+        if (this.currentInput.length > 0) {  
+            const hasExactMatch = matches.some(cat =>   
+                cat.title.toLowerCase() === this.currentInput.toLowerCase()  
+            );  
+              
+            if (!hasExactMatch) {  
+                const newCategory: Category = { title: this.currentInput, isNew: true };  
+                const createNewOption = { item: newCategory, match: { score: 1, matches: [] } };  
+                return [createNewOption, ...matches.map(cat => ({  
+                    item: cat,   
+                    match: { score: 0.8, matches: [] }  
+                }))];  
+            }  
+        }  
+
+        return matches.map(cat => ({  
+            item: cat,   
+            match: { score: 0.8, matches: [] }  
+        }));  
+    }  
+
     // Returns all available suggestions.
     getItemText(item: Category): string {  
        return item.title;  
@@ -40,22 +82,70 @@ export class ExampleModal extends FuzzySuggestModal<category> {
     }  
   
     renderSuggestion(match: FuzzyMatch<Category>, el: HTMLElement) {  
-       const titleEl = el.createDiv();  
-       renderResults(titleEl, match.item.title, match.match);  
-  
-       // Only render the matches in the author name.  
-       const authorEl = el.createEl('small');  
-       const offset = -(match.item.title.length + 1);  
-       renderResults(authorEl, match.item.title, match.match, offset);  
+       if (item.item.isNew) {  
+            el.createEl('div', { text: `Create new category: "${item.item.title}"` });  
+            el.addClass('suggestion-new');  
+        } else {  
+            el.createEl('div', { text: item.item.title });  
+        }  
     }  
   
-    onChooseItem(category: Category, evt: MouseEvent | KeyboardEvent): void {  
-       new Notice(`Selected ${category.title}`);  
+    onChooseSuggestion(item: FuzzyMatch<Category>, evt: MouseEvent | KeyboardEvent) {  
+        if (item.item.isNew) {  
+            this.createNewCategory(item.item.title);  
+        } else {  
+            this.selectExistingCategory(item.item);  
+        }  
+        this.close();  
+    }  
+  
+    private createNewCategory(title: string) {  
+        // Create the new category logic  
+        const newCategory = { title, id: generateId() };  
+        this.saveCategory(newCategory);  
+        this.addCategoryToActiveNote(title);  
+    }  
+  
+    private selectExistingCategory(category: Category) {  
+        this.addCategoryToActiveNote(category.title);  
     }  
 }
 
 export default class EnhanceWebViewerPlugin extends Plugin {
-	async onload() {  
+	async addCategoryToActiveNote(category: string) {  
+    // Get the active markdown view  
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);  
+      
+    if (!activeView || !activeView.file) {  
+        new Notice('No active markdown file found');  
+        return;  
+    }  
+  
+    // Use processFrontMatter to atomically modify the frontmatter  
+    await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {  
+        // Handle existing categories (both single string and array)  
+        let categories: string[] = [];  
+          
+        if (frontmatter.category) {  
+            if (Array.isArray(frontmatter.category)) {  
+                categories = frontmatter.category;  
+            } else if (typeof frontmatter.category === 'string') {  
+                categories = [frontmatter.category];  
+            }  
+        }  
+          
+        // Add the new category if it doesn't already exist  
+        if (!categories.includes(category)) {  
+            categories.push(category);  
+        }  
+          
+        // Update frontmatter  
+        frontmatter.category = categories.length === 1 ? categories[0] : categories;  
+    });  
+      
+    new Notice(`Added category: ${category}`);  
+}
+    async onload() {  
         // Register event for editor context menu  
         this.registerEvent(
           this.app.workspace.on('file-menu', (menu, file) => {
@@ -91,12 +181,12 @@ export default class EnhanceWebViewerPlugin extends Plugin {
           id: 'insert-category',
           name: 'Choose category to insert',
           editorCallback: (editor: Editor) => {
-            const modal = new ExampleModal(this.app);
+            const modal = new CategoryModal(this.app);
             modal.onChooseItem = (category) => {
-                const replacement = `category: ['` + category.title + `']`;
-                editor.replaceRange(replacement, editor.getCursor());
+                this.addCategoryToActiveNote(category.title);
             };
             modal.open();
+            modal.setPlaceholder('Select a category to insert');
           },
         });
     }
