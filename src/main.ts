@@ -25,11 +25,12 @@ export class CategoryModal extends FuzzySuggestModal<category> {
         return Array.from(categories).sort();
     };
 
-    getSuggestions(query: string): FuzzyMatch<Category>[] {
-        this.currentInput = query.trim();
+    getSuggestions(query: string | undefined): Category[] {
+        const raw = (query ?? '').toString();
+        this.currentInput = raw.trim();
 
         if(!this.currentInput) {
-            return [];
+            return this.getItems();
         }
 
         //Get existing categories, Map strings -> Category objects so we can use .title safely
