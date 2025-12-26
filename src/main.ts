@@ -46,7 +46,7 @@ const ALL_CHOICES = [
 ]
 
 export class InitialModal extends SuggestModal<InitialChoice> {
-    getSuggestions(query: string): IntitalChoice[] {
+    getSuggestions(query: string): InitialChoice[] {
         return ALL_CHOICES.filter((choice) =>
           choice.title.toLowerCase().includes(query.toLowerCase())
         );
@@ -58,8 +58,9 @@ export class InitialModal extends SuggestModal<InitialChoice> {
     }
 
     onChooseSuggestion(choice: InitialChoice, evt: MouseEvent | KeyboardEvent) {
-    new Notice(`Selected ${choice.title}`);
-  }
+        new Notice(`Selected ${choice.title}`);
+        return(choice);
+    }
 }
 
 export class CategoryModal extends FuzzySuggestModal<category> {
@@ -238,7 +239,7 @@ export default class EnhanceWebViewerPlugin extends Plugin {
           editorCallback: (editor: Editor) => {
             const modal = new InitialModal(this.app);
             modal.onChooseItem = (choice) => {
-                this.addCategoryToActiveNote(choice.title);
+                console.log(`User chose to add ${choice.field} using ${choice.type}`);
             };
             modal.open();
             modal.setPlaceholder('Add Metadata to Active Note');
