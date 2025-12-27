@@ -207,7 +207,7 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
     }      
 }  
    
-export default class EnhanceWebViewerPlugin extends Plugin {
+export default class FrontmatterPlugin extends Plugin {
 	async addValueToActiveNote(field: string, newValue: string) {  
         // Get the active markdown view  
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);  
