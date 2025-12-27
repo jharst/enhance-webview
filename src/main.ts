@@ -9,7 +9,7 @@ interface InitialChoice {
     title: string;
     subtitle: string;
     type: 'FuzzySuggestModal'|'PromptModal';
-    field: 'category'|'tag'|'alias'|'author'|'year';
+    field: 'category'|'tags'|'alias'|'author'|'year';
 }
 
 const ALL_CHOICES = [
@@ -23,7 +23,7 @@ const ALL_CHOICES = [
         title: 'Add Tag',
         subtitle: 'Choose tag to add',
         type: 'FuzzySuggestModal',
-        field: 'tag',
+        field: 'tags',
     },
     {
         title: 'Add Alias',
@@ -57,105 +57,132 @@ export class InitialModal extends SuggestModal<InitialChoice> {
         el.createEl('small', {text: choice.subtitle});
     }
 
-    onChooseSuggestion(choice: InitialChoice, evt: MouseEvent | KeyboardEvent) {
+    onChooseSuggestion(choice: InitialChoice, evt: MouseEvent | KeyboardEvIent) {
+       // Call the onChooseItem callback if provided (so external handlers run)
+        const callback = (this as any).onChooseItem;
+        if (typeof callback === 'function') {
+            callback(choice);
+            return;
+        }
+
+        // Fallback behavior if no callback provided
         new Notice(`Selected ${choice.title}`);
-        return(choice);
+        return choice;
     }
 }
 
-export class CategoryModal extends FuzzySuggestModal<category> {
-    private currentInput: string = ''
+export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: boolean }> {
+    private field: 'category'|'tags'|'author';
+    private currentInput: string = '';
+    private allowCreat: boolean;
+
+    constructor(app: App, field: 'category'|'tags'|'author', allowCreate = true) {
+        super(app);
+        this.field = field;
+        this.allowCreate = allowCreate;
+    }
     
-    private getCategories(): string[] {
-        const files = this.app.vault.getMarkdownFiles();  
-        const categories = new Set<string>();  
-          
-        for (const file of files) {
-          const cache = this.app.metadataCache.getFileCache(file);
-          if (cache?.frontmatter) {
-            const categoryValue = parseFrontMatterEntry(cache.frontmatter, 'category');
-            const values = Array.isArray(categoryValue) ? categoryValue : [categoryValue];
-            for (const c of values) {
-              if (typeof c === 'string') categories.add(c);
+    private getValues(): string [] {
+        if (this.field === 'tags') {
+            const tags = Object.keys(this.app.metadataCache.getTags()).map(tag => tag.replace(/^#/, ''));
+            return tags;
+        } else {
+            const files = this.app.vault.getMarkdownFiles();  
+            const values = new Set<string>();  
+              
+            for (const file of files) {
+              const cache = this.app.metadataCache.getFileCache(file);
+              if (cache?.frontmatter) {
+                const metadata = parseFrontMatterEntry(cache.frontmatter, this.field);
+                const newValues = Array.isArray(metadata) ? metadata : [metadata];
+                for (const c of newValues) {
+                  if (typeof c === 'string') values.add(c);
+                }
+              }
             }
-          }
-        }
-        return Array.from(categories).sort();
+            return Array.from(values).sort();
+        }    
     };
 
-    getSuggestions(query: string | undefined): Category[] {
+    // private getCategories(): string[] {
+    //     const files = this.app.vault.getMarkdownFiles();  
+    //     const categories = new Set<string>();  
+          
+    //     for (const file of files) {
+    //       const cache = this.app.metadataCache.getFileCache(file);
+    //       if (cache?.frontmatter) {
+    //         const categoryValue = parseFrontMatterEntry(cache.frontmatter, 'category');
+    //         const values = Array.isArray(categoryValue) ? categoryValue : [categoryValue];
+    //         for (const c of values) {
+    //           if (typeof c === 'string') categories.add(c);
+    //         }
+    //       }
+    //     }
+    //     return Array.from(categories).sort();
+    // };
+
+    getSuggestions(query: string | undefined) {
         const raw = (query ?? '').toString();
         this.currentInput = raw.trim();
-
-        if(!this.currentInput) {
-            return this.getItems();
-        }
-
-        //Get existing categories, Map strings -> Category objects so we can use .title safely
-        const existingCategories: Category[] = this.getCategories().map(t => ({ title: t}));
+        const allValues = this.getValues().map(t => ({ title: t}));
+        if(!this.currentInput) return allValues;
+        
         const inputLower = this.currentInput.toLowerCase();
-        const matches = existingCategories.filter(cat =>
-            typeof cat.title === 'string' && cat.title.toLowerCase().includes(inputLower)
+        const matches = allValues.filter(v =>
+            typeof v.title === 'string' && v.title.toLowerCase().includes(inputLower)
         );
 
         //If no matches, add the current input as a new category
-        if (matches.length === 0 && this.currentInput.length > 0) {
+        if (matches.length === 0 && this.allowCreate && this.currentInput.length > 0) {
            return [{ title: this.currentInput, isNew: true }];
         }
 
         // If partial matches and no exact match, put "Create new" first
-        const hasExactMatch = matches.some(cat =>
-            typeof cat.title === 'string' && cat.title.toLowerCase() === inputLower
+        const hasExactMatch = matches.some(m =>
+            typeof m.title === 'string' && m.title.toLowerCase() === inputLower
         );
 
-        if (!hasExactMatch) {
+        if (!hasExactMatch && this.allowCreate) {
             return [{ title: this.currentInput, isNew: true }, ...matches];
         }
 
         return matches;
     }
     
-    getItems(): Category[] {
-        // compute fresh each time from vault
-        return this.getCategories().map((title) => ({ title }));
-    } 
-    getItemText(item: Category): string {
-        return item.title;
-    }
-    renderSuggestion(itemOrMatch: Category | FuzzyMatch<Category>, el: HTMLElement) {
-        // Be defensive: support both shapes (Category or { item: Category })
-        const item: Category = (itemOrMatch && (itemOrMatch as any).item) ? (itemOrMatch as any).item : (itemOrMatch as any);
+    getItemText(item: { title: string }) { return item.title; }
 
+    renderSuggestion(itemOrMatch: any, el: HTMLElement) {
+        const item = itemOrMatch?.item ?? itemOrMatch;
         if (item?.isNew) {
-            el.createEl('div', { text: `Create new category: "${item.title}"` });
+            el.createEl('div', { text: `Create new ${this.field}: "${item.title}"` });
             el.addClass('suggestion-new');
         } else {
-            el.createEl('div', { text: item?.title ?? '' });
+            el.createEl('div', { text: item.title });
         }
     }
 
     // onChooseSuggestion will also be called with a Category
-    onChooseSuggestion(itemOrMatch: Category | FuzzyMatch<Category>, evt: MouseEvent | KeyboardEvent) {
-        const chosen: Category = (itemOrMatch && (itemOrMatch as any).item) ? (itemOrMatch as any).item : (itemOrMatch as any);
+    onChooseSuggestion(itemOrMatch: any, evt: MouseEvent | KeyboardEvent) {
+        const item = itemOrMatch?.item ?? itemOrMatch;
 
         // call external handler if provided
         const callback = (this as any).onChooseItem;
         if (typeof callback === 'function') {
-            callback(chosen);
+            callback(item);
             return;
         }
 
         // fallback behavior
-        if (chosen?.isNew) {
-            new Notice(`Would create new category: ${chosen.title}`);
+        if (item?.isNew) {
+            new Notice(`Would create new category: ${item.title}`);
         } else {
-            new Notice(`Would select existing category: ${chosen.title}`);
+            new Notice(`Would select existing category: ${item.title}`);
         }
     }      
 }  
    
 export default class EnhanceWebViewerPlugin extends Plugin {
-	async addCategoryToActiveNote(category: string) {  
+	async addValueToActiveNote(field: string, newValue: string) {  
         // Get the active markdown view  
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);  
           
@@ -165,29 +192,30 @@ export default class EnhanceWebViewerPlugin extends Plugin {
         }  
       
         // Use processFrontMatter to atomically modify the frontmatter  
-        await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {  
-            // Handle existing categories (both single string and array)  
-            let categories: string[] = [];  
-              
-            if (frontmatter.category) {  
-                if (Array.isArray(frontmatter.category)) {  
-                    categories = frontmatter.category;  
-                } else if (typeof frontmatter.category === 'string') {  
-                    categories = [frontmatter.category];  
-                }  
-            }  
-              
-            // Add the new category if it doesn't already exist  
-            if (!categories.includes(category)) {  
-                categories.push(category);  
-            }  
-              
-            // Update frontmatter  
-            frontmatter.category = categories.length === 1 ? categories[0] : categories;  
-        });  
-          
-        new Notice(`Added category: ${category}`);  
+        await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
+            // Handle existing values of chosen field
+            let existingValues: string[] = [];
+
+            if (frontmatter[field]) {
+                if (Array.isArray(frontmatter[field])) {
+                    existingValues = frontmatter[field];
+                } else if (typeof frontmatter[field] === 'string') {
+                    existingValues = [frontmatter[field]];
+                }
+            }
+
+            // Add the new value if it doesn't already exist
+            if (!existingValues.includes(newValue)) {
+                existingValues.push(newValue);
+            }
+
+            // Update frontmatter
+            frontmatter[field] = existingValues.length === 1 ? existingValues[0] : existingValues;
+        });
+
+        new Notice(`Added ${field}: ${newValue}`);  
     }
+
     async onload() {  
         // Register event for editor context menu  
         this.registerEvent(
@@ -239,7 +267,25 @@ export default class EnhanceWebViewerPlugin extends Plugin {
           editorCallback: (editor: Editor) => {
             const modal = new InitialModal(this.app);
             modal.onChooseItem = (choice) => {
-                console.log(`User chose to add ${choice.field} using ${choice.type}`);
+                if (choice.type === 'FuzzySuggestModal') {
+                    const field = choice.field as 'category'|'tags'|'author';
+                    const metadataModal = new MetadataModal(this.app, field);
+                    metadataModal.onChooseItem = (item) => {
+                        if (item?.title) {
+                            this.addValueToActiveNote(field, item.title);
+                        }
+                    };
+                    metadataModal.open();
+                    metadataModal.setPlaceholder(`Select a ${field} to add`);
+                } else if (choice.type === 'PromptModal') {
+                    const field = choice.field;
+                    // Simple prompt for now
+                    const userInput = prompt(`Enter ${field} to add:`);
+                    if (userInput) {
+                        // For alias and year, just insert at cursor for now
+                        editor.replaceRange(userInput, editor.getCursor());
+                    }
+                }
             };
             modal.open();
             modal.setPlaceholder('Add Metadata to Active Note');
