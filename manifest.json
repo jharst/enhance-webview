@@ -1,11 +1,11 @@
 {
-	"id": "enhance-web-viewer",
-	"name": "Enhance Web Viewer",
+	"id": "manage-frontmatter",
+	"name": "Manage Frontmatter",
 	"version": "1.0.0",
 	"minAppVersion": "0.15.0",
-	"description": "Trying to Enhance built-in Obsidian Web Viewer.",
+	"description": "A Simple Modal to Manage Frontmatter",
 	"author": "Acke",
-	"authorUrl": "https://github.com/jharst",
+	"authorUrl": "https://github.com/jharst/frontmatter",
 	"fundingUrl": "",
 	"isDesktopOnly": true
 }
