@@ -93,7 +93,15 @@ export class PromptModal extends Modal {
               .onClick(() => {
                 this.close();
                 onSubmit(newValue);
-              }));
+              })
+            )
+          .addButton((btn) =>
+            btn
+              .setButtonText('Cancel')
+              .onClick(() => {
+                this.close();
+              })
+              );
       }
 }
 
@@ -212,15 +220,18 @@ export class DeletionModal extends SuggestModal <Choice> {
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!activeView || !activeView.file) {  
             new Notice('No active markdown file found');  
-            return;  
+            return [];  
         }  
+        let frontmatterTypes: string[] = [];
         await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
-            let frontmatterTypes: string[] = [];
             if (frontmatter) {
-                frontmatterTypes = Object.keys(frontmatter);
+                const fields = Object.keys(frontmatter);
+                frontmatterTypes = fields.map(field => ({ field }));
+            } else {
+                frontmatterTypes = [];
             }
-        return frontmatterTypes.map(field => ({ field }));
         });
+        return frontmatterTypes;
     }
 
     renderSuggestion(choice: Choice, el: HTMLElement) {
@@ -376,6 +387,7 @@ export default class FrontmatterPlugin extends Plugin {
         editorCallback: (editor: Editor) => {
             const modal = new DeletionModal(this.app);
             modal.onChooseItem = (choice) => {
+                // Open new modal to select value to remove
                 new Notice(`Would remove values for field: ${choice.field}`);
             };
             modal.open();
@@ -383,7 +395,7 @@ export default class FrontmatterPlugin extends Plugin {
             },
         });
     }
-    
+
 	async onunload() {
 	}
 }
