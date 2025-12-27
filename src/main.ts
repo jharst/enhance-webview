@@ -275,19 +275,6 @@ export default class EnhanceWebViewerPlugin extends Plugin {
         );
 
         this.addCommand({
-          id: 'insert-category',
-          name: 'Choose category to insert',
-          editorCallback: (editor: Editor) => {
-            const modal = new CategoryModal(this.app);
-            modal.onChooseItem = (category) => {
-                this.addCategoryToActiveNote(category.title);
-            };
-            modal.open();
-            modal.setPlaceholder('Select a category to insert');
-          },
-        });
-
-        this.addCommand({
             id: 'add-tag',
             name: 'Add Tag to Frontmatter',
             editorCallback: (editor: Editor) => {
@@ -316,7 +303,7 @@ export default class EnhanceWebViewerPlugin extends Plugin {
                 modal.setPlaceholder('Select a category to add');
             },
         });
-        
+
         this.addCommand({
           id: 'frontmatter-modal',
           name: 'Add Frontmatter',
