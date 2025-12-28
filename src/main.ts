@@ -238,7 +238,7 @@ export class DeletionModal extends SuggestModal <MetadataChoice> {
                             metadataChoices.push({ field: key, title: String(item) });
                         }
                     } else {
-                        metaadataChoices.push({ field: key, title: String(value) });
+                        metadataChoices.push({ field: key, title: String(value) });
                     }
                 }
             }
@@ -251,56 +251,38 @@ export class DeletionModal extends SuggestModal <MetadataChoice> {
         el.createEl('small', { text: 'Remove values for ' + choice.field + ': ' + choice.title, cls: 'suggestion-subtitle' });
     }
 
-    onChooseSuggestion(choice: MetadataChoice, evt: MouseEvent | KeyboardEvent) {
+    async onChooseSuggestion(choice: MetadataChoice, evt: MouseEvent | KeyboardEvent) {
        // Call the onChooseItem callback if provided (so external handlers run)
-        const callback = (this as any).onChooseItem;
-        if (typeof callback === 'function') {
-            callback(choice);
-            return;
+        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!activeView || !activeView.file) {  
+            new Notice('No active markdown file found');  
+            return;  
         }
+        
+        await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
+            if (frontmatter) {
+                if (Array.isArray(frontmatter[choice.field])) {
+                    frontmatter[choice.field] = frontmatter[choice.field].filter((v: string) => v !== choice.title);
+                    if (frontmatter[choice.field].length === 0) {
+                        delete frontmatter[choice.field];
+                    }
+                } else if (frontmatter[choice.field] === choice.title) {
+                    delete frontmatter[choice.field];
+                }
+            }
+        })
 
-        // Fallback behavior if no callback provided
-        new Notice(`Selected ${choice.field}`);
-        return choice;
+       const remainingChoices = await this.getSuggestions('');
+       if (remainingChoices.length > 0) {
+            const newModal = new DeletionModal(this.app);
+            newModal.open();
+        } else {
+            new Notice('All metadata removed.');
+        }
     }
 }   
 
 export default class FrontmatterPlugin extends Plugin {
-	async removeValueFromActiveNote(field: string, valueToRemove: string): MetadataChoice {
-        // Get the active markdown view  
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);  
-          
-        if (!activeView || !activeView.file) {  
-            new Notice('No active markdown file found');  
-            return;  
-        }  
-      
-        // Use processFrontMatter to atomically modify the frontmatter  
-        await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
-            // Handle existing values of chosen field
-            let existingValues: string[] = [];
-
-            if (frontmatter[field]) {
-                if (Array.isArray(frontmatter[field])) {
-                    existingValues = frontmatter[field];
-                } else if (typeof frontmatter[field] === 'string') {
-                    existingValues = [frontmatter[field]];
-                }
-            }
-
-            // Remove the specified value
-            existingValues = existingValues.filter(v => v !== valueToRemove);
-
-            // Update frontmatter
-            if (existingValues.length === 0) {
-                delete frontmatter[field];
-            } else {
-                frontmatter[field] = existingValues.length === 1 ? existingValues[0] : existingValues;
-            }
-        });
-
-        new Notice(`Removed ${field}: ${valueToRemove}`);
-    }
 
     async addValueToActiveNote(field: string, newValue: string) {  
         // Get the active markdown view  
@@ -434,9 +416,6 @@ export default class FrontmatterPlugin extends Plugin {
         name: 'Remove Metadata',
         editorCallback: (editor: Editor) => {
             const modal = new DeletionModal(this.app);
-            modal.onChooseItem = (choice) => {
-                this.removeValueFromActiveNote(choice.field, choice.title);
-            };
             modal.open();
             modal.setPlaceholder('Remove Metadata from Active Note');
             },
