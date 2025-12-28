@@ -1,8 +1,14 @@
 import { App, Editor, MarkdownView, parseFrontMatterEntry, Notice, Plugin, FuzzySuggestModal, SuggestModal, Modal, Setting } from 'obsidian';
+
 interface Category {
     title: string;
     isNew?: boolean;
     id?: string;
+}
+
+interface MetadataChoice {
+    title: string;
+    field: string;
 }
 
 interface InitialChoice {
@@ -44,6 +50,7 @@ const ALL_CHOICES = [
         field: 'author',
     }
 ]
+
 
 export class InitialModal extends SuggestModal<InitialChoice> {
     getSuggestions(query: string): InitialChoice[] {
@@ -215,31 +222,36 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
     }      
 }  
 
-export class DeletionModal extends SuggestModal <Choice> {
-    async getSuggestions(query: string): Choice[] {
+export class DeletionModal extends SuggestModal <MetadataChoice> {
+    async getSuggestions(query: string): MetadataChoice[] {
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!activeView || !activeView.file) {  
             new Notice('No active markdown file found');  
             return [];  
         }  
-        let frontmatterTypes: string[] = [];
+        const metadataChoices: MetadataChoice[] = [];
         await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
             if (frontmatter) {
-                const fields = Object.keys(frontmatter);
-                frontmatterTypes = fields.map(field => ({ field }));
-            } else {
-                frontmatterTypes = [];
+                for (const [key, value] of Object.entries(frontmatter)) {
+                    if (Array.isArray(value)) {
+                        for (const item of value) {
+                            metadataChoices.push({ field: key, title: String(item) });
+                        }
+                    } else {
+                        metaadataChoices.push({ field: key, title: String(value) });
+                    }
+                }
             }
         });
-        return frontmatterTypes;
+        return metadataChoices;
     }
 
-    renderSuggestion(choice: Choice, el: HTMLElement) {
-        el.createEl('div', { text: choice.field });
-        el.createEl('small', { text: 'Remove values for ' + choice.field, cls: 'suggestion-subtitle' });
+    renderSuggestion(choice: MetadataChoice, el: HTMLElement) {
+        el.createEl('div', { text: choice.title });
+        el.createEl('small', { text: 'Remove values for ' + choice.field + ': ' + choice.title, cls: 'suggestion-subtitle' });
     }
 
-    onChooseSuggestion(choice: InitialChoice, evt: MouseEvent | KeyboardEvent) {
+    onChooseSuggestion(choice: MetadataChoice, evt: MouseEvent | KeyboardEvent) {
        // Call the onChooseItem callback if provided (so external handlers run)
         const callback = (this as any).onChooseItem;
         if (typeof callback === 'function') {
@@ -254,7 +266,43 @@ export class DeletionModal extends SuggestModal <Choice> {
 }   
 
 export default class FrontmatterPlugin extends Plugin {
-	async addValueToActiveNote(field: string, newValue: string) {  
+	async removeValueFromActiveNote(field: string, valueToRemove: string): MetadataChoice {
+        // Get the active markdown view  
+        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);  
+          
+        if (!activeView || !activeView.file) {  
+            new Notice('No active markdown file found');  
+            return;  
+        }  
+      
+        // Use processFrontMatter to atomically modify the frontmatter  
+        await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
+            // Handle existing values of chosen field
+            let existingValues: string[] = [];
+
+            if (frontmatter[field]) {
+                if (Array.isArray(frontmatter[field])) {
+                    existingValues = frontmatter[field];
+                } else if (typeof frontmatter[field] === 'string') {
+                    existingValues = [frontmatter[field]];
+                }
+            }
+
+            // Remove the specified value
+            existingValues = existingValues.filter(v => v !== valueToRemove);
+
+            // Update frontmatter
+            if (existingValues.length === 0) {
+                delete frontmatter[field];
+            } else {
+                frontmatter[field] = existingValues.length === 1 ? existingValues[0] : existingValues;
+            }
+        });
+
+        new Notice(`Removed ${field}: ${valueToRemove}`);
+    }
+
+    async addValueToActiveNote(field: string, newValue: string) {  
         // Get the active markdown view  
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);  
           
@@ -387,8 +435,7 @@ export default class FrontmatterPlugin extends Plugin {
         editorCallback: (editor: Editor) => {
             const modal = new DeletionModal(this.app);
             modal.onChooseItem = (choice) => {
-                // Open new modal to select value to remove
-                new Notice(`Would remove values for field: ${choice.field}`);
+                this.removeValueFromActiveNote(choice.field, choice.title);
             };
             modal.open();
             modal.setPlaceholder('Remove Metadata from Active Note');
