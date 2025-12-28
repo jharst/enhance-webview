@@ -85,7 +85,7 @@ export class InitialModal extends SuggestModal<InitialChoice> {
                         if (frontmatter[field]) {
                             if (Array.isArray(frontmatter[field])) {
                                 existingValues = frontmatter[field];
-                            } else if (typeof frontmatter[ield] === 'string') {
+                            } else if (typeof frontmatter[field] === 'string') {
                                 existingValues = [frontmatter[field]];
                             }
                         }
@@ -146,7 +146,6 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
     private field: 'category'|'tags'|'author';
     private currentInput: string = '';
     private allowCreate: boolean;
-    private presentValues: string[] = []; //Object with keys field and title
 
     constructor(app: App, field: 'category'|'tags'|'author', allowCreate = true) {
         super(app);
@@ -156,38 +155,46 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
     
     private getValues(): string [] {
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView); 
-        if (this.field === 'tags') { 
-            if (activeView && activeView.file) {  
-              const cache = this.app.metadataCache.getFileCache(activeView.file);  
-              if (cache) {  
-                const presentValues = getAllTags(cache).map(tag => tag.replace(/^#/, '')).map(tag => ({field: 'tags', title: tag}));
-                const allTags = Object.keys(this.app.metadataCache.getTags()).map(tag => tag.replace(/^#/, ''));
-                return allTags.filter(t => !presentValues.includes(t)).sort();
+        const presentSet = new Set<string>();
+        if (activeView && activeView.file) {      
+            const cache = this.app.metadataCache.getFileCache(activeView.file);  
+            if (cache) {  
+                if (this.field === 'tags') {
+                    const presentTags = getAllTags(cache).map(tag => tag.replace(/^#/, '')).map(tag => ({field: 'tags', title: tag}));
+                    presentTags.forEach(t => presenSet.add(t));
+                } else {
+                    const fmValue = parseFrontMatterEntry(cache.frontmatter, this.field);
+                    const fmArr = Array.isArray(fmValue) ? fmValue : (fmValue ? [fmValue] : []);
+                    fmArr.forEach(v => { if (typeof v === 'string') presentSet.add(v); });
                 }
             }
-        } else {
-            if (activeView && activeView.file) {  
-                const cache = this.app.metadataCache.getFileCache(activeView.file);  
-                if (cache) {
-                    const presentValues = parseFrontMatterEntry(cache.frontmatter, this.field).map(v => ({field: this.field, title: v}));
+        }
+
+        if (this.field === 'tags') {
+            const allTags = Object.keys(this.app.metadataCache.getTags()).map(tag => tag.replace(/^#/, ''));
+            return allTags
+                .filter(t => !presentSet.has(t))
+                .sort((a, b) => a.localeCompare(b))
+                .map(t => ({ title: t }));
+            } else {
+                const files = this.app.vault.getMarkdownFiles();  
+                const values = new Set<string>();  
+                for (const file of files) {
+                  const cache = this.app.metadataCache.getFileCache(file);
+                  if (cache?.frontmatter) {
+                    const metadata = parseFrontMatterEntry(cache.frontmatter, this.field);
+                    const newValues = Array.isArray(metadata) ? metadata : [metadata];
+                    for (const c of newValues) {
+                      if (typeof c === 'string') values.add(c);
+                    }
+                  }
                 }
-            }
-            
-            const files = this.app.vault.getMarkdownFiles();  
-            const values = new Set<string>();  
-            for (const file of files) {
-              const cache = this.app.metadataCache.getFileCache(file);
-              if (cache?.frontmatter) {
-                const metadata = parseFrontMatterEntry(cache.frontmatter, this.field);
-                const newValues = Array.isArray(metadata) ? metadata : [metadata];
-                for (const c of newValues) {
-                  if (typeof c === 'string') values.add(c);
-                }
-              }
-            }
-            return Array.from(values).filter(v => !presentValues.includes(v)).sort();
-        }    
-    };
+            return Array.from(values)
+                .filter(v => !presentSet.has(v))
+                .sort((a, b) => a.localeCompare(b))
+                .map(v => ({ title: v }));
+            }    
+    }
 
     getSuggestions(query: string | undefined) {
         const raw = (query ?? '').toString();
@@ -201,7 +208,7 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         );
 
         //If no matches AND current input isn't equal to present values, add current input as a new value
-        if (currentInput in presentValues) {this.allowCreate = false;}
+        if (this.presentValues.includes(this.currentInput)) { this.allowCreate = false; }
         if (matches.length === 0 && this.allowCreate && this.currentInput.length > 0) {
            return [{ title: this.currentInput, isNew: true }];
         }
