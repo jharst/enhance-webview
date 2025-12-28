@@ -146,6 +146,7 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
     private field: 'category'|'tags'|'author';
     private currentInput: string = '';
     private allowCreate: boolean;
+    private presentSet: Set<string> = new Set();
 
     constructor(app: App, field: 'category'|'tags'|'author', allowCreate = true) {
         super(app);
@@ -159,9 +160,10 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         if (activeView && activeView.file) {      
             const cache = this.app.metadataCache.getFileCache(activeView.file);  
             if (cache) {  
+                this.presentSet = presentSet;
                 if (this.field === 'tags') {
-                    const presentTags = getAllTags(cache).map(tag => tag.replace(/^#/, '')).map(tag => ({field: 'tags', title: tag}));
-                    presentTags.forEach(t => presenSet.add(t));
+                    const presentTags = getAllTags(cache).map(tag => tag.replace(/^#/, ''));
+                    presentTags.forEach(t => presentSet.add(t));
                 } else {
                     const fmValue = parseFrontMatterEntry(cache.frontmatter, this.field);
                     const fmArr = Array.isArray(fmValue) ? fmValue : (fmValue ? [fmValue] : []);
@@ -208,7 +210,8 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         );
 
         //If no matches AND current input isn't equal to present values, add current input as a new value
-        if (this.presentSet.includes(this.currentInput)) { this.allowCreate = false; }
+        const inActiveNote = Array.from(this.presentSet).some(v => v.toLowerCase() === inputLower);
+        this.allowCreate = !inActiveNote;
         if (matches.length === 0 && this.allowCreate && this.currentInput.length > 0) {
            return [{ title: this.currentInput, isNew: true }];
         }
