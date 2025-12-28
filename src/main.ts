@@ -153,7 +153,7 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         this.allowCreate = allowCreate;
     }
     
-    private getValues(): string [] {
+    private getValues(): { title: string }[] {
         const activeView = this.app.workspace.getActiveViewOfType(MarkdownView); 
         const presentSet = new Set<string>();
         if (activeView && activeView.file) {      
@@ -208,7 +208,7 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         );
 
         //If no matches AND current input isn't equal to present values, add current input as a new value
-        if (this.presentValues.includes(this.currentInput)) { this.allowCreate = false; }
+        if (this.presentSet.includes(this.currentInput)) { this.allowCreate = false; }
         if (matches.length === 0 && this.allowCreate && this.currentInput.length > 0) {
            return [{ title: this.currentInput, isNew: true }];
         }
