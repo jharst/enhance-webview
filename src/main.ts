@@ -1,5 +1,5 @@
 import { App, Editor, MarkdownView, parseFrontMatterEntry, Notice, Plugin, FuzzySuggestModal, SuggestModal, Modal, Setting, getAllTags, TFile } from 'obsidian';
-import { getActiveMDFile } from './helpers';
+import { getActiveMDFile, updateFrontmatterValues, readFrontmatterValuesfromActiveFile } from './helpers';
 
 interface Category {
     title: string;
@@ -182,20 +182,9 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
     private getValues(): { title: string }[] {
         const file = getActiveMDFile(this.app);
         if (!file) {new Notice('No active markdown file found'); return; }
+        
         //Get values of active note
-        const presentSet = new Set<string>();
-        const cache = this.app.metadataCache.getFileCache(file);  
-        if (cache) {  
-            this.presentSet = presentSet;
-            if (this.field === 'tags') {
-                const presentTags = getAllTags(cache).map(tag => tag.replace(/^#/, ''));
-                presentTags.forEach(t => presentSet.add(t));
-            } else {
-                const fmValue = parseFrontMatterEntry(cache.frontmatter, this.field);
-                const fmArr = Array.isArray(fmValue) ? fmValue : (fmValue ? [fmValue] : []);
-                fmArr.forEach(v => { if (typeof v === 'string') presentSet.add(v); });
-            }
-        }
+        const presentSet = readFrontmatterValuesfromActiveFile(this.app, file, this.field);
 
         //Get all possible values in vault (excluding present values)
         if (this.field === 'tags') {
@@ -228,7 +217,7 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         const raw = (query ?? '').toString();
         this.currentInput = raw.trim();
         const allValues = this.getValues();
-        if(!this.currentInput) return allValues;
+        if (!this.currentInput) return allValues;
         
         const inputLower = this.currentInput.toLowerCase();
         const matches = allValues.filter(v =>
@@ -273,25 +262,11 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         const file = getActiveMDFile(this.app);
         if (!file) {new Notice('No active markdown file found'); return; }
       
-        await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
-            let existingValues: string[] = [];
-            if (frontmatter[this.field]) {
-                if (Array.isArray(frontmatter[this.field])) {
-                    existingValues = frontmatter[this.field];
-                } else if (typeof frontmatter[this.field] === 'string') {
-                    existingValues = [frontmatter[this.field]];
-                }
-            }
-
-            // Add the new value if it doesn't already exist
-            if (!existingValues.includes(item.title)) {
-                existingValues.push(item.title);
-            }
-
-            // Update frontmatter
-            frontmatter[this.field] = existingValues.length === 1 ? existingValues[0] : existingValues;
-        });
-
+        const changed = await updateFrontmatterValues(this.app, file, this.field, item.title);
+        if (changed) {
+          new Notice(`Added "${item.title}" to ${this.field}`);
+        }
+        
         this.close();
         new InitialModal(this.app).open();
     }
