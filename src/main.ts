@@ -1,4 +1,5 @@
 import { App, Editor, MarkdownView, parseFrontMatterEntry, Notice, Plugin, FuzzySuggestModal, SuggestModal, Modal, Setting, getAllTags, TFile } from 'obsidian';
+import { getActiveMDFile } from './helpers';
 
 interface Category {
     title: string;
@@ -74,13 +75,10 @@ export class InitialModal extends SuggestModal<InitialChoice> {
             const field = choice.field;
             const promptModal = new PromptModal(this.app, field, async (value) => {
                 if (value) {
-                    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);  
-                    if (!activeView || !activeView.file) {  
-                        new Notice('No active markdown file found');  
-                        return;  
-                    }  
+                    const file = getActiveMDFile(this.app);
+                    if (!file) {new Notice('No active markdown file found'); return; }
                   
-                    await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
+                    await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
                         let existingValues: string[] = [];
                         if (field === 'year') {
                             value = parseInt(value);
@@ -182,21 +180,20 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
     }
     
     private getValues(): { title: string }[] {
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView); 
+        const file = getActiveMDFile(this.app);
+        if (!file) {new Notice('No active markdown file found'); return; }
         //Get values of active note
         const presentSet = new Set<string>();
-        if (activeView && activeView.file) {      
-            const cache = this.app.metadataCache.getFileCache(activeView.file);  
-            if (cache) {  
-                this.presentSet = presentSet;
-                if (this.field === 'tags') {
-                    const presentTags = getAllTags(cache).map(tag => tag.replace(/^#/, ''));
-                    presentTags.forEach(t => presentSet.add(t));
-                } else {
-                    const fmValue = parseFrontMatterEntry(cache.frontmatter, this.field);
-                    const fmArr = Array.isArray(fmValue) ? fmValue : (fmValue ? [fmValue] : []);
-                    fmArr.forEach(v => { if (typeof v === 'string') presentSet.add(v); });
-                }
+        const cache = this.app.metadataCache.getFileCache(file);  
+        if (cache) {  
+            this.presentSet = presentSet;
+            if (this.field === 'tags') {
+                const presentTags = getAllTags(cache).map(tag => tag.replace(/^#/, ''));
+                presentTags.forEach(t => presentSet.add(t));
+            } else {
+                const fmValue = parseFrontMatterEntry(cache.frontmatter, this.field);
+                const fmArr = Array.isArray(fmValue) ? fmValue : (fmValue ? [fmValue] : []);
+                fmArr.forEach(v => { if (typeof v === 'string') presentSet.add(v); });
             }
         }
 
@@ -273,13 +270,10 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
 
     async onChooseSuggestion(itemOrMatch: any, evt: MouseEvent | KeyboardEvent) {
         const item = itemOrMatch?.item ?? itemOrMatch;
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);  
-        if (!activeView || !activeView.file) {  
-            new Notice('No active markdown file found');  
-            return;  
-        }  
+        const file = getActiveMDFile(this.app);
+        if (!file) {new Notice('No active markdown file found'); return; }
       
-        await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
+        await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
             let existingValues: string[] = [];
             if (frontmatter[this.field]) {
                 if (Array.isArray(frontmatter[this.field])) {
@@ -305,13 +299,10 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
 
 export class DeletionModal extends SuggestModal <MetadataChoice> {
     async getSuggestions(query: string): MetadataChoice[] {
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (!activeView || !activeView.file) {  
-            new Notice('No active markdown file found');  
-            return [];  
-        }  
+        const file = getActiveMDFile(this.app);
+        if (!file) {new Notice('No active markdown file found'); return; }
         const metadataChoices: MetadataChoice[] = [];
-        await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
+        await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
             if (frontmatter) {
                 for (const [key, value] of Object.entries(frontmatter)) {
                     if (Array.isArray(value)) {
@@ -334,13 +325,10 @@ export class DeletionModal extends SuggestModal <MetadataChoice> {
 
     async onChooseSuggestion(choice: MetadataChoice, evt: MouseEvent | KeyboardEvent) {
        // Call the onChooseItem callback if provided (so external handlers run)
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (!activeView || !activeView.file) {  
-            new Notice('No active markdown file found');  
-            return;  
-        }
+        const file = getActiveMDFile(this.app);
+        if (!file) {new Notice('No active markdown file found'); return; }
         
-        await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
+        await this.app.fileManager.processFrontMatter(file, (frontmatter) => {
             if (frontmatter) {
                 if (Array.isArray(frontmatter[choice.field])) {
                     frontmatter[choice.field] = frontmatter[choice.field].filter((v: string) => v !== choice.title);
