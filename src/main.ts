@@ -161,7 +161,7 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
     private field: 'category'|'tags'|'author';
     private currentInput: string = '';
     private allowCreate: boolean;
-    private presentSet: Set<string> = new Set();
+    private presentMetadata: string[] = [];
 
     constructor(app: App, field: 'category'|'tags'|'author', allowCreate = true) {
         super(app);
@@ -174,10 +174,9 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         if (!file) {new Notice('No active markdown file found'); return; }
         
         //Get values of active note
-        const presentSet = helpers.readFrontmatterValuesfromActiveFile(this.app, file, this.field);
-
+        this.presentMetadata = helpers.readFrontmatterValuesfromActiveFile(this.app, file, this.field);
         //Get all possible values in vault (excluding present values)
-        return helpers.readFrontmatterValuesfromVault(this.app, this.field, presentSet);
+        return helpers.readFrontmatterValuesfromVault(this.app, this.field, this.presentMetadata);
     }
 
     getSuggestions(query: string | undefined) {
@@ -187,13 +186,12 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         if (!this.currentInput) return allValues;
         
         const inputLower = this.currentInput.toLowerCase();
-        const matches = allValues.filter(v =>
-            typeof v.title === 'string' && v.title.toLowerCase().includes(inputLower)
-        );
+        const matches = allValues
+            .filter(v => typeof v.title === 'string' && v.title.toLowerCase().includes(inputLower))
 
         //If no matches AND current input isn't equal to present values, add current input as a new value
-        const inActiveNoteExact = Array.from(this.presentSet).some(v => v.toLowerCase() === inputLower);
-        const inActiveNotePrefix = Array.from(this.presentSet).some(v => v.toLowerCase().startsWith(inputLower));
+        const inActiveNoteExact = Array.from(this.presentMetadata).some(v => v.title.toLowerCase() === inputLower);
+        const inActiveNotePrefix = Array.from(this.presentMetadata).some(v => v.title.toLowerCase().startsWith(inputLower));
         this.allowCreate = !(inActiveNoteExact);
         if (this.currentInput.length > 3 && inActiveNotePrefix) { this.allowCreate = false; }
         if (matches.length === 0 && this.allowCreate) {
