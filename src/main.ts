@@ -1,15 +1,11 @@
 import { App, Editor, MarkdownView, parseFrontMatterEntry, Notice, Plugin, FuzzySuggestModal, SuggestModal, Modal, Setting, getAllTags, TFile } from 'obsidian';
 import * as helpers from './helpers';
 
-interface Category {
-    title: string;
-    isNew?: boolean;
-    id?: string;
-}
 
 interface Metadata {
     title: string;
     field: string;
+    isNew: boolean;
 }
 
 interface InitialChoice {
@@ -82,9 +78,9 @@ export class InitialModal extends SuggestModal<InitialChoice> {
                     const file = helpers.getActiveMDFile(this.app);
                     if (!file) {new Notice('No active markdown file found'); return; }
                   
-                    const existingValues: string[] = helpers.readFrontmatterValuesfromActiveFile(this.app, file, field);
-                    if (!existingValues.includes(value)) {
-                        existingValues.push(value);
+                    const existingValues: Metadata[] = helpers.readFrontmatterValuesfromActiveFile(this.app, file, field);
+                    if (!existingValues.some(v => v.title.includes(value))) {
+                        existingValues.push({ title: value, field: field, isNew: false });
                     }
 
                     const changed = helpers.updateFrontmatterValues(this.app, file, field, value);
@@ -157,11 +153,11 @@ export class PromptModal extends Modal {
       }
 }
 
-export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: boolean }> {
+export class MetadataModal extends FuzzySuggestModal<Metadata> {
     private field: 'category'|'tags'|'author';
     private currentInput: string = '';
     private allowCreate: boolean;
-    private presentMetadata: string[] = [];
+    private presentMetadata: Metadata[] = [];
 
     constructor(app: App, field: 'category'|'tags'|'author', allowCreate = true) {
         super(app);
@@ -169,7 +165,7 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         this.allowCreate = allowCreate;
     }
     
-    private getValues(): { title: string }[] {
+    private getValues(): Metadata[] {
         const file = helpers.getActiveMDFile(this.app);
         if (!file) {new Notice('No active markdown file found'); return; }
         
@@ -179,7 +175,7 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         return helpers.readFrontmatterValuesfromVault(this.app, this.field, this.presentMetadata);
     }
 
-    getSuggestions(query: string | undefined) {
+    getSuggestions(query: string | undefined): Metadata[] {
         const raw = (query ?? '').toString();
         this.currentInput = raw.trim();
         const allValues = this.getValues();
@@ -195,7 +191,7 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         this.allowCreate = !(inActiveNoteExact);
         if (this.currentInput.length > 3 && inActiveNotePrefix) { this.allowCreate = false; }
         if (matches.length === 0 && this.allowCreate) {
-           return [{ title: this.currentInput, isNew: true }];
+           return [{ title: this.currentInput, field: this.field, isNew: true }];
         }
 
         // If partial matches and no exact match, put "Create new" first
@@ -204,13 +200,13 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         );
 
         if (!hasExactMatch && this.allowCreate) {
-            return [{ title: this.currentInput, isNew: true }, ...matches];
+            return [{ title: this.currentInput, field: this.field, isNew: true }, ...matches];
         }
 
         return matches;
     }
     
-    getItemText(item: { title: string }) { return item.title; }
+    getItemText(item: Metadata) { return String(item?.title ?? ''); }
 
     renderSuggestion(itemOrMatch: any, el: HTMLElement) {
         const item = itemOrMatch?.item ?? itemOrMatch;
