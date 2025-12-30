@@ -1,21 +1,18 @@
 import { App, Editor, MarkdownView, parseFrontMatterEntry, Notice, Plugin, FuzzySuggestModal, SuggestModal, Modal, Setting, getAllTags, TFile } from 'obsidian';
+import * as helpers from './helpers';
 
-interface Category {
-    title: string;
-    isNew?: boolean;
-    id?: string;
-}
 
-interface MetadataChoice {
+interface Metadata {
     title: string;
     field: string;
+    isNew: boolean;
 }
 
 interface InitialChoice {
     title: string;
     subtitle: string;
     type: 'FuzzySuggestModal'|'PromptModal';
-    field: 'category'|'tags'|'aliases'|'author'|'year';
+    field: 'category'|'tags'|'aliases'|'author'|'year'|'all';
 }
 
 const ALL_CHOICES = [
@@ -74,39 +71,26 @@ export class InitialModal extends SuggestModal<InitialChoice> {
             const field = choice.field;
             const promptModal = new PromptModal(this.app, field, async (value) => {
                 if (value) {
-                    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);  
-                    if (!activeView || !activeView.file) {  
-                        new Notice('No active markdown file found');  
-                        return;  
-                    }  
+                    if (field === 'year') {
+                        value = parseInt(value);
+                    }
+
+                    const file = helpers.getActiveMDFile(this.app);
+                    if (!file) {new Notice('No active markdown file found'); return; }
                   
-                    await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
-                        let existingValues: string[] = [];
-                        if (field === 'year') {
-                            value = parseInt(value);
-                        }
+                    const existingValues: Metadata[] = helpers.readFrontmatterValuesfromActiveFile(this.app, file, field);
+                    if (!existingValues.some(v => v.title.includes(value))) {
+                        existingValues.push({ title: value, field: field, isNew: false });
+                    }
 
-                        if (frontmatter[field]) {
-                            if (Array.isArray(frontmatter[field])) {
-                                existingValues = frontmatter[field];
-                            } else if (typeof frontmatter[field] === 'string') {
-                                existingValues = [frontmatter[field]];
-                            }
-                        }
-
-                        // Add the new value if it doesn't already exist
-                        if (!existingValues.includes(value)) {
-                            existingValues.push(value);
-                        }
-
-                        // Update frontmatter
-                        frontmatter[field] = existingValues.length === 1 ? existingValues[0] : existingValues;
-                    });
-
+                    const changed = helpers.updateFrontmatterValues(this.app, file, field, value);
+                    if (changed) {
+                        new Notice(`Added "${value}" to ${field}`);
+                    }
                     this.close();
                     new InitialModal(this.app).open();
-                    }
-                });
+                }   
+            });
             promptModal.open();
         }
     };        
@@ -169,11 +153,11 @@ export class PromptModal extends Modal {
       }
 }
 
-export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: boolean }> {
+export class MetadataModal extends FuzzySuggestModal<Metadata> {
     private field: 'category'|'tags'|'author';
     private currentInput: string = '';
     private allowCreate: boolean;
-    private presentSet: Set<string> = new Set();
+    private presentMetadata: Metadata[] = [];
 
     constructor(app: App, field: 'category'|'tags'|'author', allowCreate = true) {
         super(app);
@@ -181,70 +165,33 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         this.allowCreate = allowCreate;
     }
     
-    private getValues(): { title: string }[] {
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView); 
+    private getValues(): Metadata[] {
+        const file = helpers.getActiveMDFile(this.app);
+        if (!file) {new Notice('No active markdown file found'); return; }
+        
         //Get values of active note
-        const presentSet = new Set<string>();
-        if (activeView && activeView.file) {      
-            const cache = this.app.metadataCache.getFileCache(activeView.file);  
-            if (cache) {  
-                this.presentSet = presentSet;
-                if (this.field === 'tags') {
-                    const presentTags = getAllTags(cache).map(tag => tag.replace(/^#/, ''));
-                    presentTags.forEach(t => presentSet.add(t));
-                } else {
-                    const fmValue = parseFrontMatterEntry(cache.frontmatter, this.field);
-                    const fmArr = Array.isArray(fmValue) ? fmValue : (fmValue ? [fmValue] : []);
-                    fmArr.forEach(v => { if (typeof v === 'string') presentSet.add(v); });
-                }
-            }
-        }
-
+        this.presentMetadata = helpers.readFrontmatterValuesfromActiveFile(this.app, file, this.field);
         //Get all possible values in vault (excluding present values)
-        if (this.field === 'tags') {
-            const allTags = Object.keys(this.app.metadataCache.getTags()).map(tag => tag.replace(/^#/, ''));
-            return allTags
-                .filter(t => !presentSet.has(t))
-                .sort((a, b) => a.localeCompare(b))
-                .map(t => ({ title: t }));
-            } else {
-                const files = this.app.vault.getMarkdownFiles();  
-                const values = new Set<string>();  
-                for (const file of files) {
-                  const cache = this.app.metadataCache.getFileCache(file);
-                  if (cache?.frontmatter) {
-                    const metadata = parseFrontMatterEntry(cache.frontmatter, this.field);
-                    const newValues = Array.isArray(metadata) ? metadata : [metadata];
-                    for (const c of newValues) {
-                      if (typeof c === 'string') values.add(c);
-                    }
-                  }
-                }
-            return Array.from(values)
-                .filter(v => !presentSet.has(v))
-                .sort((a, b) => a.localeCompare(b))
-                .map(v => ({ title: v }));
-            }    
+        return helpers.readFrontmatterValuesfromVault(this.app, this.field, this.presentMetadata);
     }
 
-    getSuggestions(query: string | undefined) {
+    getSuggestions(query: string | undefined): Metadata[] {
         const raw = (query ?? '').toString();
         this.currentInput = raw.trim();
         const allValues = this.getValues();
-        if(!this.currentInput) return allValues;
+        if (!this.currentInput) return allValues;
         
         const inputLower = this.currentInput.toLowerCase();
-        const matches = allValues.filter(v =>
-            typeof v.title === 'string' && v.title.toLowerCase().includes(inputLower)
-        );
+        const matches = allValues
+            .filter(v => typeof v.title === 'string' && v.title.toLowerCase().includes(inputLower))
 
         //If no matches AND current input isn't equal to present values, add current input as a new value
-        const inActiveNoteExact = Array.from(this.presentSet).some(v => v.toLowerCase() === inputLower);
-        const inActiveNotePrefix = Array.from(this.presentSet).some(v => v.toLowerCase().startsWith(inputLower));
+        const inActiveNoteExact = Array.from(this.presentMetadata).some(v => v.title.toLowerCase() === inputLower);
+        const inActiveNotePrefix = Array.from(this.presentMetadata).some(v => v.title.toLowerCase().startsWith(inputLower));
         this.allowCreate = !(inActiveNoteExact);
         if (this.currentInput.length > 3 && inActiveNotePrefix) { this.allowCreate = false; }
         if (matches.length === 0 && this.allowCreate) {
-           return [{ title: this.currentInput, isNew: true }];
+           return [{ title: this.currentInput, field: this.field, isNew: true }];
         }
 
         // If partial matches and no exact match, put "Create new" first
@@ -253,13 +200,13 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
         );
 
         if (!hasExactMatch && this.allowCreate) {
-            return [{ title: this.currentInput, isNew: true }, ...matches];
+            return [{ title: this.currentInput, field: this.field, isNew: true }, ...matches];
         }
 
         return matches;
     }
     
-    getItemText(item: { title: string }) { return item.title; }
+    getItemText(item: Metadata) { return String(item?.title ?? ''); }
 
     renderSuggestion(itemOrMatch: any, el: HTMLElement) {
         const item = itemOrMatch?.item ?? itemOrMatch;
@@ -273,58 +220,25 @@ export class MetadataModal extends FuzzySuggestModal<{ title: string; isNew?: bo
 
     async onChooseSuggestion(itemOrMatch: any, evt: MouseEvent | KeyboardEvent) {
         const item = itemOrMatch?.item ?? itemOrMatch;
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);  
-        if (!activeView || !activeView.file) {  
-            new Notice('No active markdown file found');  
-            return;  
-        }  
+        const file = helpers.getActiveMDFile(this.app);
+        if (!file) {new Notice('No active markdown file found'); return; }
       
-        await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
-            let existingValues: string[] = [];
-            if (frontmatter[this.field]) {
-                if (Array.isArray(frontmatter[this.field])) {
-                    existingValues = frontmatter[this.field];
-                } else if (typeof frontmatter[this.field] === 'string') {
-                    existingValues = [frontmatter[this.field]];
-                }
-            }
-
-            // Add the new value if it doesn't already exist
-            if (!existingValues.includes(item.title)) {
-                existingValues.push(item.title);
-            }
-
-            // Update frontmatter
-            frontmatter[this.field] = existingValues.length === 1 ? existingValues[0] : existingValues;
-        });
-
+        const changed = await helpers.updateFrontmatterValues(this.app, file, this.field, item.title);
+        if (changed) {
+          new Notice(`Added "${item.title}" to ${this.field}`);
+        }
+        
         this.close();
         new InitialModal(this.app).open();
     }
 }  
 
-export class DeletionModal extends SuggestModal <MetadataChoice> {
-    async getSuggestions(query: string): MetadataChoice[] {
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (!activeView || !activeView.file) {  
-            new Notice('No active markdown file found');  
-            return [];  
-        }  
-        const metadataChoices: MetadataChoice[] = [];
-        await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
-            if (frontmatter) {
-                for (const [key, value] of Object.entries(frontmatter)) {
-                    if (Array.isArray(value)) {
-                        for (const item of value) {
-                            metadataChoices.push({ field: key, title: String(item) });
-                        }
-                    } else {
-                        metadataChoices.push({ field: key, title: String(value) });
-                    }
-                }
-            }
-        });
-        return metadataChoices;
+export class DeletionModal extends SuggestModal <Metadata> {
+    async getSuggestions(query: string): Metadata[] {
+        const file = helpers.getActiveMDFile(this.app);
+        if (!file) {new Notice('No active markdown file found'); return; }
+        const metadataChoices = helpers.readFrontmatterValuesfromActiveFile(this.app, file, 'all');
+        return metadataChoices.filter((choice) => choice.title.toLowerCase().includes(query.toLowerCase()) || choice.field.toLowerCase().includes(query.toLowerCase()));
     }
 
     renderSuggestion(choice: MetadataChoice, el: HTMLElement) {
@@ -333,25 +247,11 @@ export class DeletionModal extends SuggestModal <MetadataChoice> {
     }
 
     async onChooseSuggestion(choice: MetadataChoice, evt: MouseEvent | KeyboardEvent) {
-       // Call the onChooseItem callback if provided (so external handlers run)
-        const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-        if (!activeView || !activeView.file) {  
-            new Notice('No active markdown file found');  
-            return;  
-        }
+        const file = helpers.getActiveMDFile(this.app);
+        if (!file) {new Notice('No active markdown file found'); return; }
         
-        await this.app.fileManager.processFrontMatter(activeView.file, (frontmatter) => {
-            if (frontmatter) {
-                if (Array.isArray(frontmatter[choice.field])) {
-                    frontmatter[choice.field] = frontmatter[choice.field].filter((v: string) => v !== choice.title);
-                    if (frontmatter[choice.field].length === 0) {
-                        delete frontmatter[choice.field];
-                    }
-                } else if (frontmatter[choice.field] === choice.title) {
-                    delete frontmatter[choice.field];
-                }
-            }
-        })
+        const changed = helpers.updateFrontmatterValues(this.app, file, choice.field, choice.title);
+        if (changed) { new Notice(`Removed "${choice.title}" from ${choice.field}`); }
 
        const remainingChoices = await this.getSuggestions('');
        if (remainingChoices.length > 0) {
