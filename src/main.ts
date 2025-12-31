@@ -252,7 +252,7 @@ export class DeletionModal extends SuggestModal <Metadata> {
         
         const changed = helpers.updateFrontmatterValues(this.app, file, choice.field, choice.title);
         if (changed) { new Notice(`Removed "${choice.title}" from ${choice.field}`); }
-
+        await new Promise(res => setTimeout(res, 100)); // 50-200ms usually enough
        const remainingChoices = await this.getSuggestions('');
        if (remainingChoices.length > 0) {
             const newModal = new DeletionModal(this.app);
