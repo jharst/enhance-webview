@@ -238,7 +238,7 @@ export class DeletionModal extends SuggestModal <Metadata> {
         const file = helpers.getActiveMDFile(this.app);
         if (!file) {new Notice('No active markdown file found'); return; }
         const metadataChoices = helpers.readFrontmatterValuesfromActiveFile(this.app, file, 'all');
-        return metadataChoices.filter((choice) => choice.title.toLowerCase().includes(query.toLowerCase()) || choice.field.toLowerCase().includes(query.toLowerCase()));
+        return metadataChoices.filter((choice) => choice.title.toString().toLowerCase().includes(query.toLowerCase()) || choice.field.toLowerCase().includes(query.toLowerCase()));
     }
 
     renderSuggestion(choice: MetadataChoice, el: HTMLElement) {
@@ -253,12 +253,12 @@ export class DeletionModal extends SuggestModal <Metadata> {
         const changed = helpers.updateFrontmatterValues(this.app, file, choice.field, choice.title);
         if (changed) { new Notice(`Removed "${choice.title}" from ${choice.field}`); }
         await new Promise(res => setTimeout(res, 100)); // 50-200ms usually enough
-       const remainingChoices = await this.getSuggestions('');
-       if (remainingChoices.length > 0) {
-            const newModal = new DeletionModal(this.app);
-            newModal.open();
+        const remainingChoices = await this.getSuggestions('');
+        if (remainingChoices.length > 0) {
+             const newModal = new DeletionModal(this.app);
+             newModal.open();
         } else {
-            new Notice('All metadata removed.');
+             new Notice('All metadata removed.');
         }
     }
 }   
