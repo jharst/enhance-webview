@@ -259,7 +259,7 @@ export class DeletionModal extends SuggestModal <Metadata> {
             } else {
                 new Notice('No suggestion available');
             }
-        });  
+        });
   }  
 
     async getSuggestions(query: string): Metadata[] {
