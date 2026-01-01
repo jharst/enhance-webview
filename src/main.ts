@@ -253,15 +253,16 @@ export class DeletionModal extends SuggestModal <Metadata> {
         }]);    
 
         this.scope.register(["Mod"], "Enter", (evt) => {  
-            if (this.suggestions && this.selectedItem !== undefined) {  
-                new Notice(`Mod + Enter on "${this.suggestions[this.selectedItem]?.title}" - No action assigned`);  
-                return false; // Prevent default handling  
-            } else {
-                new Notice('No suggestion available');
-            }
+            new Notice("Modify action triggered");  
+            this.customBehavior();
+            return false;
         });
   }  
-
+    private customBehavior() {
+        const event = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 });
+        const activeSuggestion = this.selectActiveSuggestion(event);
+        console.log(activeSuggestion);
+}
     async getSuggestions(query: string): Metadata[] {
         const file = helpers.getActiveMDFile(this.app);
         if (!file) {new Notice('No active markdown file found'); return; }
