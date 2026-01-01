@@ -254,15 +254,11 @@ export class DeletionModal extends SuggestModal <Metadata> {
 
         this.scope.register(["Mod"], "Enter", (evt) => {  
             new Notice("Modify action triggered");  
-            this.customBehavior();
+            this.selectActiveSuggestion(evt);
             return false;
         });
   }  
-    private customBehavior() {
-        const event = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, which: 13 });
-        const activeSuggestion = this.selectActiveSuggestion(event);
-        console.log(activeSuggestion);
-}
+    
     async getSuggestions(query: string): Metadata[] {
         const file = helpers.getActiveMDFile(this.app);
         if (!file) {new Notice('No active markdown file found'); return; }
@@ -276,9 +272,12 @@ export class DeletionModal extends SuggestModal <Metadata> {
     }
 
     async onChooseSuggestion(choice: Metadata, evt: MouseEvent | KeyboardEvent) {
+        console.log(evt);
         const file = helpers.getActiveMDFile(this.app);
         if (!file) {new Notice('No active markdown file found'); return; }
-        
+        if (evt instanceof KeyboardEvent && evt.metaKey) {
+            new Notice(`Modify "${choice.title}" in ${choice.field} - Not yet implemented`);
+        } else {
         const changed = helpers.updateFrontmatterValues(this.app, file, choice.field, choice.title);
         if (changed) { new Notice(`Removed "${choice.title}" from ${choice.field}`); }
 
@@ -288,7 +287,7 @@ export class DeletionModal extends SuggestModal <Metadata> {
             newModal.open();
         } else {
             new Notice('All metadata removed.');
-        }
+        }}
     }
 }   
 
