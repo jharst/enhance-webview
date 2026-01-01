@@ -350,8 +350,6 @@ export default class FrontmatterPlugin extends Plugin {
         this.registerEvent(
           this.app.vault.on('create', async (file) => {
             if (!(file instanceof TFile) || file.extension !== 'md') return;
-            // Open the new file in a leaf and then show the InitialModal
-            await this.app.workspace.getLeaf(true).openFile(file);
             // Small delay to ensure the active view is set before opening modal
             setTimeout(() => new InitialModal(this.app).open(), 50);
             })
