@@ -97,7 +97,7 @@ export class InitialModal extends SuggestModal<InitialChoice> {
 }
 
 export class PromptModal extends Modal {
-    constructor(app: App, field: string, onSubmit: (result: string) => void) {
+    constructor(app: App, field: string, onSubmit: (result: string) => void, initialValue?: string) {
         super(app);
         this.setTitle('Input Value for ' + field);
 
@@ -112,6 +112,11 @@ export class PromptModal extends Modal {
         new Setting(this.contentEl)
             .setName(field)
             .addText((text) => {
+                // Set initial value if provided
+                if (typeof initialValue !== 'undefined' && initialValue !== null) {
+                    (text as any).setValue(String(initialValue));
+                    newValue = String(initialValue);
+                }
                 text.onChange((value) => {
                     newValue = value;
                     validate();
@@ -131,6 +136,8 @@ export class PromptModal extends Modal {
                         validate();
                     });
                 }
+                // Run initial validation after possible initialValue set
+                setTimeout(validate, 0);
             });
 
         new Setting(this.contentEl)
@@ -280,9 +287,37 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
     onChooseItem(item: Metadata, evt: MouseEvent | KeyboardEvent): void {
         const toggle = evt.metaKey || evt.ctrlKey;
         if (toggle) {
-            // Modify item logic here (not implemented in this example)
-            new Notice(`Modify functionality not implemented for "${item.title}, field: ${item.field}"`);
-            console.log(item);
+            const field = item.field;
+            const oldTitle = item.title;
+            this.close();
+            const promptModal = new PromptModal(this.app, field, async (value) => {
+                if (!value) {
+                    new Notice('No value provided, modification cancelled.');
+                    const reopen = new DeletionModal(this.app);
+                    reopen.open();
+                    return;
+                }
+                // If value unchanged, just reopen
+                if (String(value) === String(oldTitle)) {
+                    new Notice('No change made.');
+                    const reopenSame = new DeletionModal(this.app);
+                    reopenSame.open();
+                    return;
+                }
+
+                const file = helpers.getActiveMDFile(this.app);
+                if (!file) {new Notice('No active markdown file found'); return; }
+
+                // Remove old and add new (helpers.updateFrontmatterValues toggles presence)
+                await helpers.updateFrontmatterValues(this.app, file, field, oldTitle);
+                await helpers.updateFrontmatterValues(this.app, file, field, value);
+
+                new Notice(`Modified "${oldTitle}" to "${value}" in ${field}`);
+                // Reopen deletion modal after timeout
+                const newModal = new DeletionModal(this.app);
+                newModal.open();
+            }, oldTitle);
+            promptModal.open();
         } else {
             this.onChooseSuggestion(item, evt);
         }
