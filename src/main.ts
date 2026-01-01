@@ -261,19 +261,14 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
           command: "esc",  
           purpose: "Cancel"  
         }]);    
-}  
-    
-    onOpen(): void {
-        super.onOpen();
-        this.inputEl.addEventListener("keydown", (ev: KeyboardEvent) => {
-            this.maybeChooseFirstSuggestion(ev);
-        });
-    }
 
-    onClose(): void {
-        super.onClose();
-        this.inputEl.removeEventListener("keydown", (ev: KeyboardEvent) => {});
-    }
+        this.scope.register(["Mod"], "Enter", (evt) => {  
+            new Notice("Modify action triggered");  
+            console.log("Scope: ", evt)
+            this.selectActiveSuggestion(evt);
+            return false;
+        });
+}  
 
     async getSuggestions(query: string): Metadata[] {
         const file = helpers.getActiveMDFile(this.app);
@@ -284,7 +279,9 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
 
     getItemText(item: Metadata): string {return item.title; }
 
+    //This handles modifier keys for both mouse and keyboard events
     onChooseItem(item: Metadata, evt: MouseEvent | KeyboardEvent): void {
+        console.log("onChooseItem: ", evt);
         const toggle = evt.metaKey || evt.ctrlKey;
         if (toggle) {
             const field = item.field;
@@ -323,15 +320,18 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
         }
     }
 
+
     renderSuggestion(choice: Metadata, el: HTMLElement) {
         el.createEl('div', { text: choice.title, cls: 'suggestion-title' });
-        const smallEl = el.createEl('small', { cls: 'suggestion-subtitle'});
-        smallEl.appendText('Remove values for ');
-        const spanEl = smallEl.createEl('span', { text: choice.field, cls: 'field-span' });
-        smallEl.appendText(': ' + choice.title);
+        el.createEl('small', { text: 'Remove values for ' + choice.field + ': ' + choice.title, cls: 'suggestion-subtitle'});
     }
 
+    //This handles normal deletion
     async onChooseSuggestion(choice: Metadata, evt: MouseEvent | KeyboardEvent) {
+        console.log("onChooseSuggestion: ", evt);
+        if (evt instanceof KeyboardEvent && (evt.ctrlKey || evt.metaKey)) {
+            this.onChooseItem(choice, evt);
+        } else {
         const file = helpers.getActiveMDFile(this.app);
         if (!file) {new Notice('No active markdown file found'); return; }
         
@@ -346,32 +346,6 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
              new Notice('All metadata removed.');
         }
     }
-
-    private maybeChooseFirstSuggestion(evt: KeyboardEvent) {
-        const toggle = evt.ctrlKey || evt.metaKey;
-        const negate = evt.shiftKey;
-        const choice: Metadata = { title: '', field: '', isNew: false };
-        /* "Enter"-only case is handled by FuzzySuggestModal already
-        It seems that the selected item has to be chosen manually here
-        which means that the metadata structure is lost */
-        if (evt.key === "Enter" && (toggle || negate)) {
-            choice.title =
-                this.resultContainerEl
-                    .getElementsByClassName("is-selected")
-                    .item(0)
-                    ?.getElementsByClassName("suggestion-title")
-                    .item(0)?.textContent ?? null;
-            choice.field = 
-                this.resultContainerEl 
-                    .getElementsByClassName("is-selected")
-                    .item(0)
-                    ?.getElementsByClassName("field-span")
-                    .item(0)?.textContent ?? '';
-            if (choice != null) {
-                this.close();
-                this.onChooseItem(choice, evt);
-            }
-        }
     }
 }   
 
