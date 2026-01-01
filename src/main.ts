@@ -315,7 +315,7 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
                 new Notice(`Modified "${oldTitle}" to "${value}" in ${field}`);
                 // Reopen deletion modal after timeout
                 const newModal = new DeletionModal(this.app);
-                newModal.open();
+                setTimeout(() => newModal.open(), 100);
             }, oldTitle);
             promptModal.open();
         } else {
