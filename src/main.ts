@@ -285,6 +285,7 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
 
     onOpen() {
         super.onOpen?.();
+        // debugger;
         window.addEventListener("keydown", this.onGlobalKeyDownBound);
         window.addEventListener("keyup", this.onGlobalKeyUpBound);
         console.log("DeletionModal opened, event listeners added");
@@ -303,7 +304,7 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
             this.modifyMode = true;
             console.log("onGlobalKeyDown triggered");
             console.log("modify mode: ", this.modifyMode);
-            this.refreshSuggestions();
+            this.updateSuggestionSubtitles();
           }
         }
     }
@@ -314,35 +315,70 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
         if (!e.ctrlKey && !e.metaKey) {
           if (this.modifyMode) {
             this.modifyMode = false;
-            this.refreshSuggestions();
+            this.updateSuggestionSubtitles();
           }
         }
     }
 
-    // Try internal method if present; otherwise fallback to close/reopen preserving input
-    private async refreshSuggestions() {
-        const inputValue = (this as any).inputEl?.value ?? "";
+    // Call this after you set this.modifyMode = true/false
+    private updateSuggestionSubtitles() {
+      const anyThis = this as any;
 
-        // close and reopen modal (preserve input value)
-        const preservedValue = inputValue;
-        this.close();
-        const reopened = new DeletionModal(this.app);
-        console.log("Reopening DeletionModal to refresh suggestions");
-        reopened.setModifyMode(this.modifyMode);
-        reopened.open();
-        
-        // restore input after modal open
-        setTimeout(() => {
-          try {
-            (reopened as any).inputEl.value = preservedValue;
-            // trigger input event so the modal's internals pick up the value
-            (reopened as any).inputEl.dispatchEvent(new Event("input", { bubbles: true }));
-          } catch (err) {
-            /* ignore */
+      // Try common container names the runtime may use
+      const suggestionsEl: HTMLElement | undefined =
+        anyThis.suggestionsEl ?? anyThis.resultContainerEl ?? undefined;
+
+      if (!suggestionsEl) {
+        // no DOM to update; fall back to your close/reopen logic if needed
+        return;
+      } else {console.log(suggestionsEl);}
+
+      // Use requestAnimationFrame to batch DOM writes and avoid layout thrash
+      requestAnimationFrame(() => {
+        // Each suggestion item often contains a small.suggestion-subtitle element.
+        // If not present, look for <small> in the item.
+        const items = Array.from(suggestionsEl.children) as HTMLElement[];
+        for (const item of items) {
+          // Find subtitle node that you created in renderSuggestion
+          let subtitle = item.querySelector('small.suggestion-subtitle') as HTMLElement | null;
+          if (!subtitle) {
+            // fallback: any <small> child
+            subtitle = item.querySelector('small') as HTMLElement | null;
           }
-        }, 0);
-    }
+          if (!subtitle) continue;
 
+          // Build the new subtitle text using the same format your renderSuggestion used
+          // (make sure this matches your earlier renderSuggestion string)
+          // e.g. "Modify values for author: John" or "Remove values for author: John"
+          // We attempt to preserve the suffix after the "for " part.
+          const old = subtitle.textContent ?? '';
+          // If you constructed subtitle exactly as: `${prefix} ${choice.field}: ${choice.title}`
+          // and you cannot readily reconstruct the field/title from DOM, we can replace the prefix.
+          const newPrefix = this.modifyMode ? 'Modify values for ' : 'Remove values for ';
+
+          // Try to find the first ':' occurrence (separator between field and title) and keep the rest
+          const colonIndex = old.indexOf(':');
+          const rest = colonIndex >= 0 ? old.slice(colonIndex + 1) : old;
+          // Try to extract the field part between 'for ' and ':' so we can keep it if needed
+          const fieldPart = colonIndex >= 0 ? (old.slice(0, colonIndex).replace(/^(Modify|Remove) values for /, '')).trim() : '';
+          // If we have fieldPart and rest, compose deterministic new subtitle:
+          if (fieldPart) {
+            subtitle.textContent = `${newPrefix}${fieldPart}: ${rest.trim()}`;
+          } else {
+            // Fallback: just replace the prefix if present, otherwise set newPrefix + old
+            // Detect and replace existing 'Remove values for ' or 'Modify values for '
+            if (old.startsWith('Remove values for ')) {
+              subtitle.textContent = old.replace('Remove values for ', newPrefix);
+            } else if (old.startsWith('Modify values for ')) {
+              subtitle.textContent = old.replace('Modify values for ', newPrefix);
+            } else {
+              subtitle.textContent = newPrefix + old;
+            }
+          }
+        }
+      });
+    }
+    
     async getSuggestions(query: string): Metadata[] {
         const file = helpers.getActiveMDFile(this.app);
         if (!file) {new Notice('No active markdown file found'); return; }
@@ -360,7 +396,7 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
     }
 
     async onChooseSuggestion(choice: Metadata, evt: MouseEvent | KeyboardEvent) {
-        console.log("onChooseSuggestion: ", evt);
+        console.log("onChooseSuggestion: ", evt, "\n", choice);
         //If meta key held, open prompt to modify
         if (evt instanceof KeyboardEvent && (evt.ctrlKey || evt.metaKey)) {
             const field = choice.field;
