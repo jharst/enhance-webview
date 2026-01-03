@@ -50,6 +50,32 @@ const ALL_CHOICES = [
 
 
 export class InitialModal extends SuggestModal<InitialChoice> {
+    
+    constructor(app: App) {
+        super(app);
+        this.setInstructions([{  
+            command: "↑↓",  
+            purpose: "Navigate suggestions"  
+          }, {  
+            command: "↵",  
+            purpose: "Select item"  
+          }, {  
+            command: "⌘ D",
+            purpose: "Modify or Delete"
+          }, {
+            command: "esc",  
+            purpose: "Cancel"  
+        }]);
+
+        this.scope.register(["Mod"], "d", (evt) => {  
+            evt.preventDefault();
+            this.close();
+            const deletionModal = new DeletionModal(this.app);
+            setTimeout(() => deletionModal.open(), 100);
+            return false;
+        });
+    }
+
     getSuggestions(query: string): InitialChoice[] {
         return ALL_CHOICES.filter((choice) =>
           choice.title.toLowerCase().includes(query.toLowerCase())
@@ -166,8 +192,27 @@ export class MetadataModal extends FuzzySuggestModal<Metadata> {
     private allowCreate: boolean;
     private presentMetadata: Metadata[] = [];
 
-    constructor(app: App, field: 'category'|'tags'|'author', allowCreate = true) {
+    constructor(app: App, field: 'category'|'tags'|'author', allowCreate: boolean = true) {  
         super(app);
+        this.setInstructions([{  
+            command: "↑↓",  
+            purpose: "Navigate suggestions"  
+            }, {  
+            command: "↵",  
+            purpose: "Add item"  
+            }, {  
+            command: "⌘ ↵",  
+            purpose: "Add another"  
+            }, {  
+            command: "esc",  
+            purpose: "Cancel"  
+        }]);    
+
+        this.scope.register(["Mod"], "Enter", (evt) => {  
+            this.selectActiveSuggestion(evt);
+            return false;
+        });
+
         this.field = field;
         this.allowCreate = allowCreate;
     }
@@ -235,8 +280,14 @@ export class MetadataModal extends FuzzySuggestModal<Metadata> {
           new Notice(`Added "${item.title}" to ${this.field}`);
         }
         
-        this.close();
-        new InitialModal(this.app).open();
+        if (evt instanceof KeyboardEvent && (evt.ctrlKey || evt.metaKey)) {
+            // Reopen modal for another entry
+            const newModal = new MetadataModal(this.app, this.field, this.allowCreate);
+            setTimeout(() => newModal.open(), 100);
+        } else {
+            this.close();
+            new InitialModal(this.app).open();
+        }
     }
 }  
 
@@ -247,21 +298,43 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
         // Set instructions to show keyboard shortcuts  
         this.setInstructions([{  
           command: "↑↓",  
-          purpose: "Navigate suggestions"  
+          purpose: "Navigate"  
         }, {  
           command: "↵",  
-          purpose: "Delete selected item"  
+          purpose: "Modify item"  
         }, {  
           command: "⌘ ↵",  
-          purpose: "Modify selected item"  
-        }, {  
-          command: "esc",  
-          purpose: "Cancel"  
+          purpose: "Delete item"  
+        }, {
+          command: "⇧↵",
+          purpose: "Modify another"
+        }, {
+            command: "⇧⌘ ↵",
+            purpose: "Delete another"
+        }, {
+          command: "⌘ A",
+          purpose: "Add items"  
         }]);    
 
+        this.scope.register(["Mod"], "a", (evt) => {  
+            evt.preventDefault();
+            this.close();
+            const initialModal = new InitialModal(this.app);
+            setTimeout(() => initialModal.open(), 100);
+            return false;
+        });
+
+        this.scope.register(["Shift", "Mod"], "Enter", (evt) => {  
+            this.selectActiveSuggestion(evt);
+            return false;
+        });
+
+        this.scope.register(["Shift"], "Enter", (evt) => {  
+            this.selectActiveSuggestion(evt);
+            return false;
+        });
+
         this.scope.register(["Mod"], "Enter", (evt) => {  
-            new Notice("Modify action triggered");  
-            console.log("Scope: ", evt)
             this.selectActiveSuggestion(evt);
             return false;
         });
@@ -278,13 +351,41 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
 
     renderSuggestion(choice: Metadata, el: HTMLElement) {
         el.createEl('div', { text: choice.title, cls: 'suggestion-title' });
-        el.createEl('small', { text: 'Remove values for ' + choice.field + ': ' + choice.title, cls: 'suggestion-subtitle'});
+        el.createEl('small', { 
+            text: choice.field === 'tags'
+                ? 'Modify values for tag: ' + choice.title 
+                : 'Modify values for ' + choice.field + ': ' + choice.title, 
+            cls: 'suggestion-subtitle'
+        });
     }
 
     async onChooseSuggestion(choice: Metadata, evt: MouseEvent | KeyboardEvent) {
-        console.log("onChooseSuggestion: ", evt);
-        //If meta key held, open prompt to modify
-        if (evt instanceof KeyboardEvent && (evt.ctrlKey || evt.metaKey)) {
+        //If meta key held, delete item
+        //If meta + shift held, delete and reopen
+        //If shift held, modify item and reopen
+        if (evt instanceof KeyboardEvent && (evt.ctrlKey || evt.metaKey)) {            
+            const file = helpers.getActiveMDFile(this.app);
+            if (!file) {new Notice('No active markdown file found'); return; }
+            
+            const changed = helpers.updateFrontmatterValues(this.app, file, choice.field, choice.title);
+            if (changed) { new Notice(`Removed "${choice.title}" from ${choice.field}`); }
+            await new Promise(res => setTimeout(res, 100)); // 50-200ms usually enough
+            
+            // Reopen deletion modal if command + shift held
+            if (evt.metaKey && evt.shiftKey) {
+                const remainingChoices = await this.getSuggestions('');
+                if (remainingChoices.length > 0) {
+                    const newModal = new DeletionModal(this.app);
+                    setTimeout(() => newModal.open(), 100);
+                } else {
+                    new Notice('All metadata removed.');
+                    this.close();
+                }
+            } else {
+                this.close();
+            }
+        } else {
+            //Modify field if no command held
             const field = choice.field;
             const oldTitle = choice.title;
             this.close();
@@ -311,26 +412,13 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
                 await helpers.updateFrontmatterValues(this.app, file, field, value);
 
                 new Notice(`Modified "${oldTitle}" to "${value}" in ${field}`);
-                // Reopen deletion modal after timeout
-                const newModal = new DeletionModal(this.app);
-                setTimeout(() => newModal.open(), 100);
+                // Reopen deletion modal if shift held
+                if (evt.shiftKey) {
+                    const newModal = new DeletionModal(this.app);
+                    setTimeout(() => newModal.open(), 100);
+                }
             }, oldTitle);
             promptModal.open();
-        } else {
-            // Proceed with deletion
-            const file = helpers.getActiveMDFile(this.app);
-            if (!file) {new Notice('No active markdown file found'); return; }
-            
-            const changed = helpers.updateFrontmatterValues(this.app, file, choice.field, choice.title);
-            if (changed) { new Notice(`Removed "${choice.title}" from ${choice.field}`); }
-            await new Promise(res => setTimeout(res, 100)); // 50-200ms usually enough
-            const remainingChoices = await this.getSuggestions('');
-            if (remainingChoices.length > 0) {
-                 const newModal = new DeletionModal(this.app);
-                 newModal.open();
-            } else {
-                 new Notice('All metadata removed.');
-            }
         }
     }
 }   
