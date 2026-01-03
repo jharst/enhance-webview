@@ -296,6 +296,23 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
         window.removeEventListener("keyup", this.onGlobalKeyUpBound);
         super.onClose?.();
     }
+    // Call the internal updateSuggestions() if available (no selection preservation)
+    private callUpdateSuggestions() {
+      const anyThis = this as any;
+
+      // Fast path: instance method
+      if (typeof anyThis.updateSuggestions === 'function') {
+        anyThis.updateSuggestions();
+        return;
+      }
+
+      // Fallback: find on the prototype chain and call it
+      let p: any = Object.getPrototypeOf(this);
+      while (p && typeof p.updateSuggestions !== 'function') p = Object.getPrototypeOf(p);
+      if (p && typeof p.updateSuggestions === 'function') {
+        p.updateSuggestions.call(this);
+      }
+    }
 
     private onGlobalKeyDown(e: KeyboardEvent) {
         console.log("onGlobalKeyDown triggered");
@@ -304,7 +321,7 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
             this.modifyMode = true;
             console.log("onGlobalKeyDown triggered");
             console.log("modify mode: ", this.modifyMode);
-            this.updateSuggestionSubtitles();
+             this.callUpdateSuggestions();
           }
         }
     }
@@ -315,68 +332,9 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
         if (!e.ctrlKey && !e.metaKey) {
           if (this.modifyMode) {
             this.modifyMode = false;
-            this.updateSuggestionSubtitles();
+             this.callUpdateSuggestions();
           }
         }
-    }
-
-    // Call this after you set this.modifyMode = true/false
-    private updateSuggestionSubtitles() {
-      const anyThis = this as any;
-
-      // Try common container names the runtime may use
-      const suggestionsEl: HTMLElement | undefined =
-        anyThis.suggestionsEl ?? anyThis.resultContainerEl ?? undefined;
-
-      if (!suggestionsEl) {
-        // no DOM to update; fall back to your close/reopen logic if needed
-        return;
-      } else {console.log(suggestionsEl);}
-
-      // Use requestAnimationFrame to batch DOM writes and avoid layout thrash
-      requestAnimationFrame(() => {
-        // Each suggestion item often contains a small.suggestion-subtitle element.
-        // If not present, look for <small> in the item.
-        const items = Array.from(suggestionsEl.children) as HTMLElement[];
-        for (const item of items) {
-          // Find subtitle node that you created in renderSuggestion
-          let subtitle = item.querySelector('small.suggestion-subtitle') as HTMLElement | null;
-          if (!subtitle) {
-            // fallback: any <small> child
-            subtitle = item.querySelector('small') as HTMLElement | null;
-          }
-          if (!subtitle) continue;
-
-          // Build the new subtitle text using the same format your renderSuggestion used
-          // (make sure this matches your earlier renderSuggestion string)
-          // e.g. "Modify values for author: John" or "Remove values for author: John"
-          // We attempt to preserve the suffix after the "for " part.
-          const old = subtitle.textContent ?? '';
-          // If you constructed subtitle exactly as: `${prefix} ${choice.field}: ${choice.title}`
-          // and you cannot readily reconstruct the field/title from DOM, we can replace the prefix.
-          const newPrefix = this.modifyMode ? 'Modify values for ' : 'Remove values for ';
-
-          // Try to find the first ':' occurrence (separator between field and title) and keep the rest
-          const colonIndex = old.indexOf(':');
-          const rest = colonIndex >= 0 ? old.slice(colonIndex + 1) : old;
-          // Try to extract the field part between 'for ' and ':' so we can keep it if needed
-          const fieldPart = colonIndex >= 0 ? (old.slice(0, colonIndex).replace(/^(Modify|Remove) values for /, '')).trim() : '';
-          // If we have fieldPart and rest, compose deterministic new subtitle:
-          if (fieldPart) {
-            subtitle.textContent = `${newPrefix}${fieldPart}: ${rest.trim()}`;
-          } else {
-            // Fallback: just replace the prefix if present, otherwise set newPrefix + old
-            // Detect and replace existing 'Remove values for ' or 'Modify values for '
-            if (old.startsWith('Remove values for ')) {
-              subtitle.textContent = old.replace('Remove values for ', newPrefix);
-            } else if (old.startsWith('Modify values for ')) {
-              subtitle.textContent = old.replace('Modify values for ', newPrefix);
-            } else {
-              subtitle.textContent = newPrefix + old;
-            }
-          }
-        }
-      });
     }
     
     async getSuggestions(query: string): Metadata[] {
