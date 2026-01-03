@@ -50,6 +50,21 @@ const ALL_CHOICES = [
 
 
 export class InitialModal extends SuggestModal<InitialChoice> {
+    
+    constructor(app: App) {
+        super(app);
+        this.setInstructions([{  
+            command: "↑↓",  
+            purpose: "Navigate suggestions"  
+          }, {  
+            command: "↵",  
+            purpose: "Select item"  
+          }, {  
+            command: "esc",  
+            purpose: "Cancel"  
+        }]);    
+    }
+    
     getSuggestions(query: string): InitialChoice[] {
         return ALL_CHOICES.filter((choice) =>
           choice.title.toLowerCase().includes(query.toLowerCase())
@@ -166,8 +181,29 @@ export class MetadataModal extends FuzzySuggestModal<Metadata> {
     private allowCreate: boolean;
     private presentMetadata: Metadata[] = [];
 
-    constructor(app: App, field: 'category'|'tags'|'author', allowCreate = true) {
+    constructor(app: App, field: 'category'|'tags'|'author', allowCreate: boolean = true) {  
         super(app);
+        this.setInstructions([{  
+            command: "↑↓",  
+            purpose: "Navigate suggestions"  
+            }, {  
+            command: "↵",  
+            purpose: "Add item"  
+            }, {  
+            command: "⌘ ↵",  
+            purpose: "Add another"  
+            }, {  
+            command: "esc",  
+            purpose: "Cancel"  
+        }]);    
+
+        this.scope.register(["Mod"], "Enter", (evt) => {  
+            new Notice("Modify action triggered");  
+            console.log("Scope: ", evt)
+            this.selectActiveSuggestion(evt);
+            return false;
+        });
+
         this.field = field;
         this.allowCreate = allowCreate;
     }
@@ -235,8 +271,14 @@ export class MetadataModal extends FuzzySuggestModal<Metadata> {
           new Notice(`Added "${item.title}" to ${this.field}`);
         }
         
-        this.close();
-        new InitialModal(this.app).open();
+        if (evt instanceof KeyboardEvent && (evt.ctrlKey || evt.metaKey)) {
+            // Reopen modal for another entry
+            const newModal = new MetadataModal(this.app, this.field, this.allowCreate);
+            setTimeout(() => newModal.open(), 100);
+        } else {
+            this.close();
+            new InitialModal(this.app).open();
+        }
     }
 }  
 
