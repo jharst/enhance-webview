@@ -60,9 +60,21 @@ export class InitialModal extends SuggestModal<InitialChoice> {
             command: "↵",  
             purpose: "Select item"  
           }, {  
+            command: "⌘ D",
+            purpose: "Modify or Delete"
+          }, {
             command: "esc",  
             purpose: "Cancel"  
-        }]);    
+        }]);
+
+        this.scope.register(["Mod"], "d", (evt) => {  
+            console.log("Scope: ", evt)
+            evt.preventDefault();
+            this.close();
+            const deletionModal = new DeletionModal(this.app);
+            setTimeout(() => deletionModal.open(), 100);
+            return false;
+        });
     }
 
     getSuggestions(query: string): InitialChoice[] {
@@ -303,9 +315,18 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
             command: "⇧⌘ ↵",
             purpose: "Delete another"
         }, {
-          command: "esc",  
-          purpose: "Cancel"  
+          command: "⌘ A",
+          purpose: "Add items"  
         }]);    
+
+        this.scope.register(["Mod"], "a", (evt) => {  
+            console.log("Scope: ", evt)
+            evt.preventDefault();
+            this.close();
+            const initialModal = new InitialModal(this.app);
+            setTimeout(() => initialModal.open(), 100);
+            return false;
+        });
 
         this.scope.register(["Shift", "Mod"], "Enter", (evt) => {  
             new Notice("Shift + Mod action triggered");  
@@ -354,6 +375,8 @@ export class DeletionModal extends FuzzySuggestModal <Metadata> {
         //If meta + shift held, delete and reopen
         //If shift held, modify item and reopen
         if (evt instanceof KeyboardEvent && (evt.ctrlKey || evt.metaKey)) {
+            // Change to Add Fields if Option + Mod + A held
+            
             // Delete field if command held
             const file = helpers.getActiveMDFile(this.app);
             if (!file) {new Notice('No active markdown file found'); return; }
